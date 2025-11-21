@@ -1,9 +1,13 @@
 const express = require('express');
+const serverless = require('serverless-http');
 const { validateEvent, WebhookVerificationError } = require('@polar-sh/sdk/webhooks');
 const cors = require('cors');
 const { Polar } = require('@polar-sh/sdk');
 const { clerkMiddleware, getAuth, createClerkClient } = require('@clerk/express');
-require('dotenv').config();
+
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -129,6 +133,10 @@ app.post("/create-checkout", express.json(), async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+module.exports.handler = serverless(app);
