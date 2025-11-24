@@ -39,7 +39,6 @@ const polar = new Polar({
 
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   try {
-    console.log(req.body);
     const event = validateEvent(req.body, req.headers, process.env.POLAR_WEBHOOK_SECRET);
 
     console.log(`Received event: ${event.type}`);
@@ -72,6 +71,42 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
         }
       }
     }
+
+    if (event.type === "subscription.revoked") {
+      const subscription = event.data;
+      const checkoutId = subscription.checkoutId;
+
+      if (checkoutId) {
+        console.log(`Fetching checkout data for ID: ${checkoutId}...`);
+
+        const checkout = await polar.checkouts.get({ id: checkoutId });
+        const clerkUserId = checkout.customerMetadata?.clerk_user_id;
+
+        if (clerkUserId) {
+          console.log(`✅ Verified User! Updating Subscription ${subscription.id} for Clerk User ${clerkUserId}`);
+
+          const user = await clerkClient.users.getUser(clerkUserId);
+          const currentMetadata = user.publicMetadata || {};
+
+          await clerkClient.users.updateUserMetadata(clerkUserId, {
+            publicMetadata: {
+              ...currentMetadata,
+              subscriptionId: currentMetadata.subscriptionId || subscription.id,
+              customerId: subscription.customerId,
+              plan: "free",
+              status: "revoked",
+            },
+          });
+
+          console.log("Clerk user metadata updated successfully.");
+        } else {
+          console.error("❌ No clerk_user_id found in checkout metadata.");
+        }
+      } else {
+        console.error("❌ No checkoutId found in subscription data.");
+      }
+    }
+
 
     res.status(202).send("");
   } catch (error) {
