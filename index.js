@@ -241,11 +241,11 @@ app.get("/api/products", async (req, res) => {
       products: formattedProducts,
     });
   } catch (error) {
-    console.error("Erro ao processar produtos:", error);
+    console.error("Error processing products:", error);
     if (error.response) {
-       console.error("Detalhes da resposta:", JSON.stringify(error.response, null, 2));
+       console.error("Response details:", JSON.stringify(error.response, null, 2));
     }
-    res.status(500).json({ error: "Falha ao carregar os produtos." });
+    res.status(500).json({ error: "Failed to load products." });
   }
 });
 
