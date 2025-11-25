@@ -197,6 +197,58 @@ app.post("/create-checkout", express.json(), async (req, res) => {
   }
 });
 
+app.get("/api/products", async (req, res) => {
+  try {
+    console.log("Fetching products from Polar...");
+
+    const response = await polar.products.list({
+      isRecurring: true,
+      isArchived: false,
+    });
+
+    const productsList = response.result?.items || [];
+    console.log(`Found ${productsList.length} products.`);
+
+    const formattedProducts = [];
+
+    for (const item of productsList) {
+      const priceData = item.prices && item.prices.length > 0 ? item.prices[0] : null;
+      
+      console.log(`Price structure for ${item.name}:`, JSON.stringify(priceData, null, 2));
+
+      const rawAmount = priceData?.price_amount ?? priceData?.priceAmount ?? 0;
+      const price = rawAmount / 100;
+
+      const rawCurrency = priceData?.price_currency || priceData?.priceCurrency || "usd";
+      const currency = rawCurrency.toUpperCase();
+
+      const features = item.benefits ? item.benefits.map((benefit) => benefit.description) : [];
+
+      const isPopular = item.name.toLowerCase().includes("pro");
+
+      formattedProducts.push({
+        id: item.id,
+        name: item.name,
+        description: item.description || "",
+        price: price,
+        currency: currency,
+        features: features,
+        popular: isPopular,
+      });
+    }
+
+    res.json({
+      products: formattedProducts,
+    });
+  } catch (error) {
+    console.error("Erro ao processar produtos:", error);
+    if (error.response) {
+       console.error("Detalhes da resposta:", JSON.stringify(error.response, null, 2));
+    }
+    res.status(500).json({ error: "Falha ao carregar os produtos." });
+  }
+});
+
 if (process.env.NODE_ENV !== "production") {
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
