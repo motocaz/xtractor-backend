@@ -1,9 +1,15 @@
 const express = require("express");
-const serverless = require("serverless-http");
-const { validateEvent, WebhookVerificationError } = require("@polar-sh/sdk/webhooks");
+const {
+  validateEvent,
+  WebhookVerificationError,
+} = require("@polar-sh/sdk/webhooks");
 const cors = require("cors");
 const { Polar } = require("@polar-sh/sdk");
-const { clerkMiddleware, getAuth, createClerkClient } = require("@clerk/express");
+const {
+  clerkMiddleware,
+  getAuth,
+  createClerkClient,
+} = require("@clerk/express");
 
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
@@ -37,88 +43,100 @@ const polar = new Polar({
   server: process.env.POLAR_SERVER,
 });
 
-app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  try {
-    const event = validateEvent(req.body, req.headers, process.env.POLAR_WEBHOOK_SECRET);
+app.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      const event = validateEvent(
+        req.body,
+        req.headers,
+        process.env.POLAR_WEBHOOK_SECRET
+      );
 
-    console.log(`Received event: ${event.type}`);
+      console.log(`Received event: ${event.type}`);
 
-    if (event.type === "subscription.active") {
-      const subscription = event.data;
-      const checkoutId = subscription.checkoutId;
+      if (event.type === "subscription.active") {
+        const subscription = event.data;
+        const checkoutId = subscription.checkoutId;
 
-      if (checkoutId) {
-        console.log(`Fetching checkout data for ID: ${checkoutId}...`);
+        if (checkoutId) {
+          console.log(`Fetching checkout data for ID: ${checkoutId}...`);
 
-        const checkout = await polar.checkouts.get({ id: checkoutId });
-        const clerkUserId = checkout.customerMetadata?.clerk_user_id;
+          const checkout = await polar.checkouts.get({ id: checkoutId });
+          const clerkUserId = checkout.customerMetadata?.clerk_user_id;
 
-        if (clerkUserId) {
-          console.log(`✅ Verified User! Linking Subscription ${subscription.id} to Clerk User ${clerkUserId}`);
+          if (clerkUserId) {
+            console.log(
+              `✅ Verified User! Linking Subscription ${subscription.id} to Clerk User ${clerkUserId}`
+            );
 
-          await clerkClient.users.updateUserMetadata(clerkUserId, {
-            publicMetadata: {
-              subscriptionId: subscription.id,
-              customerId: subscription.customerId,
-              plan: "pro",
-              status: "active",
-            },
-          });
+            await clerkClient.users.updateUserMetadata(clerkUserId, {
+              publicMetadata: {
+                subscriptionId: subscription.id,
+                customerId: subscription.customerId,
+                plan: "pro",
+                status: "active",
+              },
+            });
 
-          console.log("Clerk user metadata updated successfully.");
-        } else {
-          console.error("❌ No clerk_user_id found in checkout metadata.");
+            console.log("Clerk user metadata updated successfully.");
+          } else {
+            console.error("❌ No clerk_user_id found in checkout metadata.");
+          }
         }
       }
-    }
 
-    if (event.type === "subscription.revoked") {
-      const subscription = event.data;
-      const checkoutId = subscription.checkoutId;
+      if (event.type === "subscription.revoked") {
+        const subscription = event.data;
+        const checkoutId = subscription.checkoutId;
 
-      if (checkoutId) {
-        console.log(`Fetching checkout data for ID: ${checkoutId}...`);
+        if (checkoutId) {
+          console.log(`Fetching checkout data for ID: ${checkoutId}...`);
 
-        const checkout = await polar.checkouts.get({ id: checkoutId });
-        const clerkUserId = checkout.customerMetadata?.clerk_user_id;
+          const checkout = await polar.checkouts.get({ id: checkoutId });
+          const clerkUserId = checkout.customerMetadata?.clerk_user_id;
 
-        if (clerkUserId) {
-          console.log(`✅ Verified User! Updating Subscription ${subscription.id} for Clerk User ${clerkUserId}`);
+          if (clerkUserId) {
+            console.log(
+              `✅ Verified User! Updating Subscription ${subscription.id} for Clerk User ${clerkUserId}`
+            );
 
-          const user = await clerkClient.users.getUser(clerkUserId);
-          const currentMetadata = user.publicMetadata || {};
+            const user = await clerkClient.users.getUser(clerkUserId);
+            const currentMetadata = user.publicMetadata || {};
 
-          await clerkClient.users.updateUserMetadata(clerkUserId, {
-            publicMetadata: {
-              ...currentMetadata,
-              subscriptionId: currentMetadata.subscriptionId || subscription.id,
-              customerId: subscription.customerId,
-              plan: "free",
-              status: "revoked",
-            },
-          });
+            await clerkClient.users.updateUserMetadata(clerkUserId, {
+              publicMetadata: {
+                ...currentMetadata,
+                subscriptionId:
+                  currentMetadata.subscriptionId || subscription.id,
+                customerId: subscription.customerId,
+                plan: "free",
+                status: "revoked",
+              },
+            });
 
-          console.log("Clerk user metadata updated successfully.");
+            console.log("Clerk user metadata updated successfully.");
+          } else {
+            console.error("❌ No clerk_user_id found in checkout metadata.");
+          }
         } else {
-          console.error("❌ No clerk_user_id found in checkout metadata.");
+          console.error("❌ No checkoutId found in subscription data.");
         }
+      }
+
+      res.status(202).send("");
+    } catch (error) {
+      if (error instanceof WebhookVerificationError) {
+        console.error("Webhook verification failed:", error);
+        res.status(403).send("");
       } else {
-        console.error("❌ No checkoutId found in subscription data.");
+        console.error("Webhook processing error:", error);
+        res.status(500).send("Internal Server Error");
       }
-    }
-
-
-    res.status(202).send("");
-  } catch (error) {
-    if (error instanceof WebhookVerificationError) {
-      console.error("Webhook verification failed:", error);
-      res.status(403).send("");
-    } else {
-      console.error("Webhook processing error:", error);
-      res.status(500).send("Internal Server Error");
     }
   }
-});
+);
 
 app.get("/test-auth", (req, res) => {
   const { userId } = getAuth(req);
@@ -140,7 +158,9 @@ app.get("/api/create-portal-session", async (req, res) => {
     const polarCustomerId = user.publicMetadata?.customerId;
 
     if (!polarCustomerId) {
-      return res.status(404).json({ error: "No active subscription found for this user." });
+      return res
+        .status(404)
+        .json({ error: "No active subscription found for this user." });
     }
 
     const session = await polar.customerSessions.create({
@@ -154,7 +174,7 @@ app.get("/api/create-portal-session", async (req, res) => {
   }
 });
 
-app.post("/create-checkout", express.json(), async (req, res) => {
+app.post("/api/create-checkout", express.json(), async (req, res) => {
   if (!req.body || Object.keys(req.body).length === 0) {
     return res.status(400).json({ error: "Request body is missing or empty" });
   }
@@ -190,7 +210,9 @@ app.post("/create-checkout", express.json(), async (req, res) => {
   } catch (error) {
     console.error("Error creating checkout session:", error);
     if (error.name === "SDKValidationError") {
-      res.status(422).json({ error: "Input validation failed", details: error.message });
+      res
+        .status(422)
+        .json({ error: "Input validation failed", details: error.message });
     } else {
       res.status(500).json({ error: "Failed to create checkout session" });
     }
@@ -212,17 +234,24 @@ app.get("/api/products", async (req, res) => {
     const formattedProducts = [];
 
     for (const item of productsList) {
-      const priceData = item.prices && item.prices.length > 0 ? item.prices[0] : null;
-      
-      console.log(`Price structure for ${item.name}:`, JSON.stringify(priceData, null, 2));
+      const priceData =
+        item.prices && item.prices.length > 0 ? item.prices[0] : null;
+
+      console.log(
+        `Price structure for ${item.name}:`,
+        JSON.stringify(priceData, null, 2)
+      );
 
       const rawAmount = priceData?.price_amount ?? priceData?.priceAmount ?? 0;
       const price = rawAmount / 100;
 
-      const rawCurrency = priceData?.price_currency || priceData?.priceCurrency || "usd";
+      const rawCurrency =
+        priceData?.price_currency || priceData?.priceCurrency || "usd";
       const currency = rawCurrency.toUpperCase();
 
-      const features = item.benefits ? item.benefits.map((benefit) => benefit.description) : [];
+      const features = item.benefits
+        ? item.benefits.map((benefit) => benefit.description)
+        : [];
 
       const isPopular = item.name.toLowerCase().includes("pro");
 
@@ -243,16 +272,22 @@ app.get("/api/products", async (req, res) => {
   } catch (error) {
     console.error("Error processing products:", error);
     if (error.response) {
-       console.error("Response details:", JSON.stringify(error.response, null, 2));
+      console.error(
+        "Response details:",
+        JSON.stringify(error.response, null, 2)
+      );
     }
     res.status(500).json({ error: "Failed to load products." });
   }
 });
 
-if (process.env.NODE_ENV !== "production") {
-  app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
-}
+const server = app.listen(port, () => {
+  console.log(`Backend server running on port ${port}`);
+});
 
-module.exports.handler = serverless(app);
+process.on("SIGTERM", () => {
+  console.log("SIGTERM signal received: closing HTTP server");
+  server.close(() => {
+    console.log("HTTP server closed");
+  });
+});
